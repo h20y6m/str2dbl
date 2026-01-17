@@ -74,11 +74,13 @@
 #include <stdio.h>
 #if defined(_MSC_VER) && _MSC_VER < 1900
 #define PRId64 "I64d"
+#define PRId32 "d"
 #else
 #include <inttypes.h>
 #endif
 #endif
 
+#include <errno.h>
 #include <float.h>
 #include <math.h>
 #include <stdlib.h>
@@ -94,11 +96,6 @@ typedef unsigned int uint32_t;
 typedef __int64 int64_t;
 typedef unsigned __int64 uint64_t;
 #define isinf(x) ((_fpclass(x) & (_FPCLASS_NINF|_FPCLASS_PINF)) != 0)
-#endif
-
-/* Changing the x87 fpu precision to 53 bit. */
-#if defined(__GNUC__) && defined(__i386__)
-#define STR2DBL_USE_X87_PC53 1
 #endif
 
 /* Using the current rounding mode. */
@@ -128,7 +125,7 @@ struct ParseFloatNumber {
 	const char* i_ptr; /* pointer to integer part */
 	const char* f_ptr; /* pointer to fraction part */
 	size_t i_len;      /* length of integer part */
-	size_t f_len;      /* length of integer part */
+	size_t f_len;      /* length of fraction part */
 	int exponent;
 	int negative;      /* 0: positive, 1: negative */
 };
@@ -768,6 +765,7 @@ static double str2dbl_core(char* str, char* str_end, char** end_ptr, int no_expo
 	/* If the exponent exceeds STR2DBL_EXPONENT_LIMIT, it is treated as an overflow. */
 	if (parse.exponent >= STR2DBL_EXPONENT_LIMIT)
 	{
+		errno = ERANGE;
 		return parse.negative ? -STR2DBL_DOUBLE_INFINITY : STR2DBL_DOUBLE_INFINITY;
 	}
 
@@ -783,6 +781,7 @@ static double str2dbl_core(char* str, char* str_end, char** end_ptr, int no_expo
 		/* overflow. */
 		if (parse.exponent >= STR2DBL_EXPONENT_LIMIT)
 		{
+			errno = ERANGE;
 			return parse.negative ? -STR2DBL_DOUBLE_INFINITY : STR2DBL_DOUBLE_INFINITY;
 		}
 	}
@@ -812,6 +811,7 @@ static double str2dbl_core(char* str, char* str_end, char** end_ptr, int no_expo
 			/* The largest number that converts to a finite double is ~1.7976931348623157e+308 */
 			if (parse.i_len - neg_exponent > (308 + 1))
 			{
+				errno = ERANGE;
 				return parse.negative ? -STR2DBL_DOUBLE_INFINITY : STR2DBL_DOUBLE_INFINITY;
 			}
 		}
@@ -830,6 +830,7 @@ static double str2dbl_core(char* str, char* str_end, char** end_ptr, int no_expo
 		/* overflow. */
 		if (parse.i_len > (308 + 1) || parse.i_len + (size_t)parse.exponent > (308 + 1))
 		{
+			errno = ERANGE;
 			return parse.negative ? -STR2DBL_DOUBLE_INFINITY : STR2DBL_DOUBLE_INFINITY;
 		}
 	}
@@ -985,14 +986,24 @@ static double str2dbl_core(char* str, char* str_end, char** end_ptr, int no_expo
 			   for converting an unsigned integer to a double, so it may be more
 			   efficient to cast to a signed integer. */
 			w = (int64_t)bd_uint64(&bd, parse.negative ? 1 : 0);
-			/* 0 <= w < 2^53 or w == 2^53 if rounded up,
-			   both can be exactly represented as a double. */
-			x = (double)w;
-			x = ldexp(x, bin_scale - 52);
+			/* Check overflow case */
+			if (w == ((int64_t)1 << 53) && bin_scale == 1023)
+			{
+				errno = ERANGE;
+				x = STR2DBL_DOUBLE_INFINITY;
+			}
+			else
+			{
+				/* 0 <= w < 2^53 or w == 2^53 if rounded up,
+				   both can be exactly represented as a double. */
+				x = (double)w;
+				x = ldexp(x, bin_scale - 52);
+			}
 		}
 		else
 		{
 			/* overflow. */
+			errno = ERANGE;
 			x = STR2DBL_DOUBLE_INFINITY;
 		}
 
@@ -1003,11 +1014,18 @@ static double str2dbl_core(char* str, char* str_end, char** end_ptr, int no_expo
 static double str2dbl_internal(char* str, char* str_end, char** end_ptr, int no_exponent)
 {
 	/* Changing the x87 fpu precision to 53 bit. */
-#if defined(__GNUC__) && defined(__i386__)
+#if defined(_MSC_VER) && defined(_M_IX86) && (!defined(_M_IX86_FP) || _M_IX86_FP == 0)
+	unsigned int oldcword;
+	double result;
+	oldcword = _controlfp(_PC_53, _MCW_PC);
+	result = str2dbl_core(str, str_end, end_ptr, no_exponent);
+	_controlfp(oldcword, _MCW_PC);
+	return result;
+#elif defined(__GNUC__) && defined(__i386__)
 	volatile double result;
 	unsigned short oldcword, newcword;
 	asm("fstcw %0" : "=m"(oldcword));
-	newcword = (oldcword & ~0x0300) | 0x0200;
+	newcword = (oldcword & ~0x0300) | 0x0200; /* 53 bits precision */
 	asm("fldcw %0" : : "m"(newcword));
 	result = str2dbl_core(str, str_end, end_ptr, no_exponent);
 	asm("fldcw %0" : : "m"(oldcword));
@@ -1082,6 +1100,7 @@ static float str2flt_core(char* str, char* str_end, char** end_ptr, int no_expon
 	/* If the exponent exceeds STR2DBL_EXPONENT_LIMIT, it is treated as an overflow. */
 	if (parse.exponent >= STR2DBL_EXPONENT_LIMIT)
 	{
+		errno = ERANGE;
 		return parse.negative ? (float)-STR2DBL_DOUBLE_INFINITY : (float)STR2DBL_DOUBLE_INFINITY;
 	}
 
@@ -1097,6 +1116,7 @@ static float str2flt_core(char* str, char* str_end, char** end_ptr, int no_expon
 		/* overflow. */
 		if (parse.exponent >= STR2DBL_EXPONENT_LIMIT)
 		{
+			errno = ERANGE;
 			return parse.negative ? (float)-STR2DBL_DOUBLE_INFINITY : (float)STR2DBL_DOUBLE_INFINITY;
 		}
 	}
@@ -1126,6 +1146,7 @@ static float str2flt_core(char* str, char* str_end, char** end_ptr, int no_expon
 			/* The largest number that converts to a finite float is ~3.4028235677973366e+38 */
 			if (parse.i_len - neg_exponent > (38 + 1))
 			{
+				errno = ERANGE;
 				return parse.negative ? (float)-STR2DBL_DOUBLE_INFINITY : (float)STR2DBL_DOUBLE_INFINITY;
 			}
 		}
@@ -1144,6 +1165,7 @@ static float str2flt_core(char* str, char* str_end, char** end_ptr, int no_expon
 		/* overflow. */
 		if (parse.i_len > (38 + 1) || parse.i_len + (size_t)parse.exponent > (38 + 1))
 		{
+			errno = ERANGE;
 			return parse.negative ? (float)-STR2DBL_DOUBLE_INFINITY : (float)STR2DBL_DOUBLE_INFINITY;
 		}
 	}
@@ -1287,14 +1309,25 @@ static float str2flt_core(char* str, char* str_end, char** end_ptr, int no_expon
 			   for converting an unsigned integer to a float, so it may be more
 			   efficient to cast to a signed integer. */
 			w = (int32_t)bd_uint32(&bd, parse.negative ? 1 : 0);
-			/* 0 <= w < 2^24 or w == 2^24 if rounded up,
-			   both can be exactly represented as a double. */
-			x = (float)w;
-			x = ldexpf(x, bin_scale - 23);
+			/* Check overflow case */
+			if (w == ((int32_t)1 << 24) && bin_scale == 127)
+			{
+				/* overflow. */
+				errno = ERANGE;
+				x = (float)STR2DBL_DOUBLE_INFINITY;
+			}
+			else
+			{
+				/* 0 <= w < 2^24 or w == 2^24 if rounded up,
+				   both can be exactly represented as a double. */
+				x = (float)w;
+				x = (float)ldexp(x, bin_scale - 23);
+			}
 		}
 		else
 		{
 			/* overflow. */
+			errno = ERANGE;
 			x = (float)STR2DBL_DOUBLE_INFINITY;
 		}
 
@@ -1304,28 +1337,11 @@ static float str2flt_core(char* str, char* str_end, char** end_ptr, int no_expon
 
 static float str2flt_internal(char* str, char* str_end, char** end_ptr, int no_exponent)
 {
-	/* Changing the x87 fpu precision to 24 bit. */
-#if defined(_MSC_VER) && defined(_M_IX86_FP) && _M_IX86_FP == 0
-	unsigned int oldcword, newcword;
-	float result;
-	_controlfp_s(&oldcword, 0, 0);
-	newcword = (oldcword & ~_MCW_PC) | _PC_24;
-	_controlfp_s(NULL, newcword, _MCW_PC);
-	result = str2flt_core(str, str_end, end_ptr, no_exponent);
-	_controlfp_s(NULL, oldcword, _MCW_PC);
-	return result;
-#elif defined(__GNUC__) && defined(__i386__)
-	unsigned short oldcword, newcword;
-	volatile float result;
-	asm("fstcw %0" : "=m"(oldcword));
-	newcword = (oldcword & ~0x0300) | 0x0000; /* 24 bits precision */
-	asm("fldcw %0" : : "m"(newcword));
-	result = str2flt_core(str, str_end, end_ptr, no_exponent);
-	asm("fldcw %0" : : "m"(oldcword));
-	return result;
-#else
+	/* NOTE: No precision change is required,
+	 * float * float can be represented exactly in 53/64 bits
+	 * so no double-rounding occurs.
+	 */
 	return str2flt_core(str, str_end, end_ptr, no_exponent);
-#endif
 }
 
 float str2flt(char* str, char** str_end)

@@ -1,4 +1,7 @@
 /* Tests for str2dbl
+ *
+ * Test pattern format:
+ *   https://github.com/nigeltao/parse-number-fxx-test-data
  */
 #include <ctype.h>
 #include <stdio.h>
@@ -17,7 +20,10 @@ typedef unsigned int uint32_t;
 #endif
 
 union f64u64 { double f64; uint64_t u64; };
+union f32u32 { float f32; uint32_t u32; };
+
 static uint64_t f64_to_bits(double x) { union f64u64 fu; fu.f64 = x; return fu.u64; }
+static uint32_t f32_to_bits(float x) { union f32u32 fu; fu.f32 = x; return fu.u32; }
 
 static uint64_t u64_from_hex(const char* str, size_t len)
 {
@@ -37,9 +43,6 @@ static uint64_t u64_from_hex(const char* str, size_t len)
 	}
 	return x;
 }
-
-union f32u32 { float f32; uint32_t u32; };
-static uint32_t f32_to_bits(float x) { union f32u32 fu; fu.f32 = x; return fu.u32; }
 
 static uint32_t u32_from_hex(const char* str, size_t len)
 {
@@ -64,6 +67,7 @@ int main(int argc, char **argv)
 {
 	char buf[2048];
 	int i_arg;
+	int fail = 0;
 
 	for (i_arg = 1; i_arg < argc; i_arg++)
 	{
@@ -74,9 +78,10 @@ int main(int argc, char **argv)
 
 		if (fp == NULL)
 		{
-			printf("error: cannot open file %s\n", argv[i_arg]);
+			fprintf(stderr, "error: cannot open file %s\n", argv[i_arg]);
 			continue;
 		}
+		printf("FILE: %s\n", argv[i_arg]);
 
 		while (fgets(buf, 2047, fp) != NULL)
 		{
@@ -90,17 +95,20 @@ int main(int argc, char **argv)
 				len--;
 				buf[len] = '\0';
 			}
-			if (len <= 26)
+
+			/* 7C00 7F800000 7FF0000000000000 123.456e789 */
+
+			if (len <= 31)
 				continue;
 
 			i_line++;
 
-			expect64 = u64_from_hex(&buf[0], 16);
-			actual64 = f64_to_bits(str2dbl(&buf[26], NULL));
+			expect64 = u64_from_hex(&buf[14], 16);
+			actual64 = f64_to_bits(str2dbl(&buf[31], NULL));
 
 			if (expect64 != actual64)
 			{
-				printf("%d: %s\n  Actual: %016" PRIX64 "\n  Expect: %016" PRIX64 "\n", i_line, &buf[26], actual64, expect64);
+				printf("%d: %s\n  Actual: %016" PRIX64 "\n  Expect: %016" PRIX64 "\n", i_line, &buf[31], actual64, expect64);
 				fail_count++;
 			}
 			else
@@ -108,12 +116,12 @@ int main(int argc, char **argv)
 				pass_count++;
 			}
 
-			expect32 = u32_from_hex(&buf[17], 8);
-			actual32 = f32_to_bits(str2flt(&buf[26], NULL));
+			expect32 = u32_from_hex(&buf[5], 8);
+			actual32 = f32_to_bits(str2flt(&buf[31], NULL));
 
 			if (expect32 != actual32)
 			{
-				printf("%d: %s\n  Actual: %08" PRIX32 "\n  Expect: %08" PRIX32 "\n", i_line, &buf[26], actual32, expect32);
+				printf("%d: %s\n  Actual: %08" PRIX32 "\n  Expect: %08" PRIX32 "\n", i_line, &buf[31], actual32, expect32);
 				fail_count++;
 			}
 			else
@@ -122,10 +130,12 @@ int main(int argc, char **argv)
 			}
 		}
 
-		printf("FILE: %s\n  PASS: %d, FAIL: %d\n", argv[i_arg], pass_count, fail_count);
+		printf("  PASS: %d, FAIL: %d\n", pass_count, fail_count);
+		if (fail_count > 0)
+			fail = 1;
 
 		fclose(fp);
 	}
 
-	return 0;
+	return fail;
 }
