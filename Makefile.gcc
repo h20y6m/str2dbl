@@ -1,0 +1,17 @@
+CFLAGS=-Wall -O3
+LIBS=-lm
+
+all: test-str2dbl test
+
+.c.o:
+	$(CC) $(CFLAGS) -c $*.c
+
+test-str2dbl: test-str2dbl.o str2dbl.o
+	$(CC) -o $@ $^ $(LIBS)
+
+test: test-str2dbl
+	./test-str2dbl test-str2dbl.txt
+
+clean:
+	-rm test-str2dbl
+	-rm *.o

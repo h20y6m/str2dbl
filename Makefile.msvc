@@ -1,0 +1,19 @@
+CC=cl
+CFLAGS=/nologo /O2 /MD /W3
+LD=link
+LDFLAGS=/nologo
+
+all: test-str2dbl.exe test
+
+.c.obj:
+	$(CC) $(CFLAGS) -c $*.c
+
+test-str2dbl.exe: test-str2dbl.obj str2dbl.obj
+	$(LD) $(LDFLAGS) -out:test-str2dbl.exe $**
+
+test: test-str2dbl.exe
+	test-str2dbl.exe test-str2dbl.txt
+
+clean:
+	-del test-str2dbl.exe
+	-del *.obj

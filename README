@@ -1,0 +1,31 @@
+This code provides a locale-independent string-to-floating-point conversion routine for C.
+
+Unlike the standard C library functions, these routines do not depend on the current locale and therefore parse decimal points consistently.
+
+Files included:
+
+* str2dbl.h
+  Public header file.
+
+* str2dbl.c
+  Implementation source file.
+
+* test-str2dbl.c
+  Test program source file.
+
+* test-str2dbl.txt
+  Test pattern file used by the test program.
+
+Provided functions:
+
+* str2dbl
+  Converts a null-terminated string to a double, similar to the standard C function `strtod`.
+
+* strn2dbl
+  Same as `str2dbl`, but takes an explicit string length.
+
+* str2dbl_noexp / strn2dbl_noexp
+  Variants of `str2dbl` / `strn2dbl` that do not accept exponent notation.
+
+* str2flt / strn2flt / str2flt_noexp / strn2flt_noexp
+  Single-precision (float) versions of the above functions.
