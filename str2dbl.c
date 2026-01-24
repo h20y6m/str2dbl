@@ -231,8 +231,17 @@ static size_t parse_float_number(struct ParseFloatNumber* parse, const char* str
 
 /* BigDecimal */
 
+/* Number of digits required for BD_MAX:
+ * The conversion to double where the most significant digits are needed
+ * seems to be distinguishing between the smallest normalized number (2^-1022)
+ * and the largest denormalized number ((1 - 2^-52) * 2^-1022).
+ * The midpoint ((1 - 2^-53) * 2^-1022) requires 768 decimal digits to
+ * represent exactly in decimal. BigDecimal has 9 decimal digits per digit,
+ * so a maximum of 87 digits are required (768 = 85 * 9 + 3).
+ * We add an additional safety margin, setting BD_MAX=90.
+ */
 #define BD_DIG      9
-#define BD_MAX      90 /* Maybe 85+ would be enough. */
+#define BD_MAX      90
 #define BD_BASE     1000000000
 #define BD_HALF     500000000
 
@@ -760,6 +769,7 @@ static double str2dbl_core(char* str, char* str_end, char** end_ptr, int no_expo
 	/* If the exponent is less than -STR2DBL_EXPONENT_LIMIT, it is treated as an underflow. */
 	if (parse.exponent <= -STR2DBL_EXPONENT_LIMIT)
 	{
+		errno = ERANGE;
 		return parse.negative ? STR2DBL_DOUBLE_NEGATIVE_ZERO : 0.0;
 	}
 	/* If the exponent exceeds STR2DBL_EXPONENT_LIMIT, it is treated as an overflow. */
@@ -798,6 +808,7 @@ static double str2dbl_core(char* str, char* str_end, char** end_ptr, int no_expo
 		/* underflow. */
 		if (parse.exponent <= -STR2DBL_EXPONENT_LIMIT)
 		{
+			errno = ERANGE;
 			return parse.negative ? STR2DBL_DOUBLE_NEGATIVE_ZERO : 0.0;
 		}
 	}
@@ -821,6 +832,7 @@ static double str2dbl_core(char* str, char* str_end, char** end_ptr, int no_expo
 			/* The smallest number that converts to a non-zero double is ~2.470328229206232720882843964E-324. */
 			if (neg_exponent - parse.i_len > (324 - 1))
 			{
+				errno = ERANGE;
 				return parse.negative ? STR2DBL_DOUBLE_NEGATIVE_ZERO : 0.0;
 			}
 		}
@@ -986,9 +998,16 @@ static double str2dbl_core(char* str, char* str_end, char** end_ptr, int no_expo
 			   for converting an unsigned integer to a double, so it may be more
 			   efficient to cast to a signed integer. */
 			w = (int64_t)bd_uint64(&bd, parse.negative ? 1 : 0);
-			/* Check overflow case */
-			if (w == ((int64_t)1 << 53) && bin_scale == 1023)
+			/* Check overflow/underflow case */
+			if (w == 0)
 			{
+				/* underflow */
+				errno = ERANGE;
+				x = 0.0;
+			}
+			else if (w == ((int64_t)1 << 53) && bin_scale == 1023)
+			{
+				/* overflow */
 				errno = ERANGE;
 				x = STR2DBL_DOUBLE_INFINITY;
 			}
@@ -1095,6 +1114,7 @@ static float str2flt_core(char* str, char* str_end, char** end_ptr, int no_expon
 	/* If the exponent is less than -STR2DBL_EXPONENT_LIMIT, it is treated as an underflow. */
 	if (parse.exponent <= -STR2DBL_EXPONENT_LIMIT)
 	{
+		errno = ERANGE;
 		return parse.negative ? (float)STR2DBL_DOUBLE_NEGATIVE_ZERO : 0.0f;
 	}
 	/* If the exponent exceeds STR2DBL_EXPONENT_LIMIT, it is treated as an overflow. */
@@ -1133,6 +1153,7 @@ static float str2flt_core(char* str, char* str_end, char** end_ptr, int no_expon
 		/* underflow. */
 		if (parse.exponent <= -STR2DBL_EXPONENT_LIMIT)
 		{
+			errno = ERANGE;
 			return parse.negative ? (float)STR2DBL_DOUBLE_NEGATIVE_ZERO : 0.0f;
 		}
 	}
@@ -1156,6 +1177,7 @@ static float str2flt_core(char* str, char* str_end, char** end_ptr, int no_expon
 			/* The smallest number that converts to a non-zero float is ~7.006492321624085e-46. */
 			if (neg_exponent - parse.i_len > (46 - 1))
 			{
+				errno = ERANGE;
 				return parse.negative ? (float)STR2DBL_DOUBLE_NEGATIVE_ZERO : 0.0f;
 			}
 		}
@@ -1309,8 +1331,14 @@ static float str2flt_core(char* str, char* str_end, char** end_ptr, int no_expon
 			   for converting an unsigned integer to a float, so it may be more
 			   efficient to cast to a signed integer. */
 			w = (int32_t)bd_uint32(&bd, parse.negative ? 1 : 0);
-			/* Check overflow case */
-			if (w == ((int32_t)1 << 24) && bin_scale == 127)
+			/* Check overflow/underflow case */
+			if (w == 0)
+			{
+				/* underflow */
+				errno = ERANGE;
+				x = 0.0f;
+			}
+			else if (w == ((int32_t)1 << 24) && bin_scale == 127)
 			{
 				/* overflow. */
 				errno = ERANGE;
