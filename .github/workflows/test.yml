@@ -84,15 +84,16 @@ jobs:
       fail-fast: false
       matrix:
         cc: [gcc, clang]
+        arch: [armhf, ppc64le, s390x, riscv64]
         include:
-          - target: arm-linux-gnueabihf
-            qemu_arch: arm
-          - target: powerpc64le-linux-gnu
-            qemu_arch: ppc64le
-          - target: s390x-linux-gnu
-            qemu_arch: s390x
-          - target: riscv64-linux-gnu
-            qemu_arch: riscv64
+          - arch: armhf
+            target: arm-linux-gnueabihf
+          - arch: ppc64le
+            target: powerpc64le-linux-gnu
+          - arch: s390x
+            target: s390x-linux-gnu
+          - arch: riscv64
+            target: riscv64-linux-gnu
 
     steps:
       - name: Check out repository
@@ -112,7 +113,7 @@ jobs:
         run: clang -target ${{ matrix.target }} -Wall -O2 -o test-str2dbl test-str2dbl.c str2dbl.c -lm
 
       - name: Test
-        run: qemu-${{ matrix.qemu_arch }} -L /usr/${{ matrix.target }} ./test-str2dbl test-str2dbl.txt
+        run: qemu-${{ matrix.arch }} -L /usr/${{ matrix.target }} ./test-str2dbl test-str2dbl.txt
 
 
   test-msvc:
@@ -141,10 +142,11 @@ jobs:
             runs-on: windows-latest
           - arch: x86
             cc: clang-cl
+            cflags: -target i686-pc-windows-msvc
             runs-on: windows-latest
           - arch: x86
             cc: clang-cl
-            cflags: /arch:IA32
+            cflags: -target i686-pc-windows-msvc /arch:IA32
             runs-on: windows-latest
           - arch: arm64
             cc: clang-cl
