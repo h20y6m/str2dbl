@@ -1,0 +1,167 @@
+name: Test
+
+on: [push]
+
+jobs:
+  test:
+    runs-on: ${{ matrix.runs-on }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+        runs-on: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Build
+        run: ${{ matrix.cc }} -Wall -O2 -o test-str2dbl test-str2dbl.c str2dbl.c -lm
+
+      - name: Test
+        run: ./test-str2dbl test-str2dbl.txt
+
+
+  test-x86:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+        cflags:
+            - -mfpmath=387 -mno-sse
+            - -mfpmath=sse -msse2
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install build dependencies
+        run: |
+            sudo apt-get update
+            sudo apt-get install -y gcc-multilib g++-multilib libc6-dev-i386
+
+      - name: Build
+        run: ${{ matrix.cc }} -m32 -Wall -O2 ${{ matrix.cflags }} -o test-str2dbl test-str2dbl.c str2dbl.c -lm
+
+      - name: Test
+        run: ./test-str2dbl test-str2dbl.txt
+
+
+  # test-armhf:
+  #   runs-on: ubuntu-24.04-arm
+
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       include:
+  #         - cc: arm-linux-gnueabihf-gcc
+  #         - cc: clang
+  #           cflags: -target arm-linux-gnueabihf
+
+  #   steps:
+  #     - name: Check out repository
+  #       uses: actions/checkout@v6
+
+  #     - name: Install build dependencies
+  #       run: |
+  #           apt-get update
+  #           apt-get install -y gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
+
+  #     - name: Build
+  #       run: ${{ matrix.cc }} ${{ matrix.cflags }} -Wall -O2 -o test-str2dbl test-str2dbl.c str2dbl.c -lm
+
+  #     - name: Test
+  #       run: ./test-str2dbl test-str2dbl.txt
+
+
+  test-qemu:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+        include:
+          - target: arm-linux-gnueabihf
+            qemu_arch: arm
+          - target: powerpc64le-linux-gnu
+            qemu_arch: ppc64le
+          - target: s390x-linux-gnu
+            qemu_arch: s390x
+          - target: riscv64-linux-gnu
+            qemu_arch: riscv64
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install build dependencies
+        run: |
+            sudo apt-get update
+            sudo apt-get install -y qemu-user gcc-${{ matrix.target }} g++-${{ matrix.target }}
+
+      - name: Build (gcc)
+        if: matrix.cc == 'gcc'
+        run: ${{ matrix.target }}-gcc -Wall -O2 -o test-str2dbl test-str2dbl.c str2dbl.c -lm
+
+      - name: Build (clang)
+        if: matrix.cc == 'clang'
+        run: clang -target ${{ matrix.target }} -Wall -O2 -o test-str2dbl test-str2dbl.c str2dbl.c -lm
+
+      - name: Test
+        run: qemu-${{ matrix.qemu_arch }} -L /usr/${{ matrix.target }} ./test-str2dbl test-str2dbl.txt
+
+
+  test-msvc:
+    runs-on: ${{ matrix.runs-on }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            cc: cl
+            runs-on: windows-latest
+          - arch: x86
+            cc: cl
+            runs-on: windows-latest
+          - arch: x86
+            cc: cl
+            cflags: /arch:IA32
+            runs-on: windows-latest
+          - arch: arm64
+            cc: cl
+            runs-on: windows-11-arm
+
+          - arch: x64
+            cc: clang-cl
+            runs-on: windows-latest
+          - arch: x86
+            cc: clang-cl
+            runs-on: windows-latest
+          - arch: x86
+            cc: clang-cl
+            cflags: /arch:IA32
+            runs-on: windows-latest
+          - arch: arm64
+            cc: clang-cl
+            runs-on: windows-11-arm
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up MSVC
+        uses: h20y6m/actions-setup-msvc-env@v2
+        with:
+            arch: ${{ matrix.arch }}
+
+      - name: Build
+        run: ${{ matrix.cc }} /nologo /O2 /Wall ${{ matrix.cflags }} test-str2dbl.c str2dbl.c
+
+      - name: Test
+        shell: cmd
+        run: .\test-str2dbl.exe test-str2dbl.txt
