@@ -162,7 +162,7 @@ jobs:
             arch: ${{ matrix.arch }}
 
       - name: Build
-        run: ${{ matrix.cc }} /nologo /O2 /Wall ${{ matrix.cflags }} test-str2dbl.c str2dbl.c
+        run: ${{ matrix.cc }} /nologo /O2 /W4 ${{ matrix.cflags }} test-str2dbl.c str2dbl.c
 
       - name: Test
         shell: cmd
